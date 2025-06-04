@@ -14,12 +14,14 @@ static int scan_number(void);
 static void create_token(Token *token, TokType type, int len);
 static char *tok_type_to_string(TokType tt);
 
-Tokenizer t;
+// I have no reason for now to change this variable from being a global one.
+Tokenizer tokenizer;
 
 void init_tokenizer(char *source_code)
 {
-    t.source_code = source_code;
-    t.cursor = -1;
+    tokenizer.source_code = source_code;
+    tokenizer.cursor = -1;
+    tokenizer.line = 1;
     advance();
 }
 
@@ -27,146 +29,136 @@ void collect_tokens(TokenArr *ta)
 {
     for (;;)
     {
-        Token token = get_next_token();
+        Token token = {0};
 
-        if (token.type == TOK_EOF) break;
+        switch (tokenizer.ch)
+        {
+        case '(':
+            create_token(&token, TOK_OPAREN, 1);
+            break;
+        case ')':
+            create_token(&token, TOK_CPAREN, 1);
+            break;
 
-        if (token.type == TOK_ERROR) {
-            printf("Unrecognized token: "); print_token(token); printf("\n");
-        }
-    
-        if (token.type != TOK_ERROR && token.type != TOK_NULL) {
-            ARR_PUSH(ta, token, Token);
-        }
-    }
-}
+        case '+':
+            create_token(&token, TOK_PLUS, 1);
+            break;
+        case '-':
+            create_token(&token, TOK_MINUS, 1);
+            break;
+        case '*':
+            create_token(&token, TOK_STAR, 1);
+            break;
+        case '/':
+            create_token(&token, TOK_SLASH, 1);
+            break;
 
-Token get_next_token(void)
-{
-    Token token;
-
-    switch (t.ch)
-    {
-    case '(':
-        create_token(&token, TOK_OPEN_PAREN, 1);
-        break;
-    case ')':
-        create_token(&token, TOK_CLOSE_PAREN, 1);
-        break;
-    case '[':
-        create_token(&token, TOK_OPEN_SQUARE, 1);
-        break;
-    case ']':
-        create_token(&token, TOK_CLOSE_SQUARE, 1);
-        break;
-    case '{':
-        create_token(&token, TOK_OPEN_BRACE, 1);
-        break;
-    case '}': 
-        create_token(&token, TOK_CLOSE_BRACE, 1);
-        break;
-
-    case '+':
-        create_token(&token, TOK_PLUS, 1);
-        break;
-    case '-':
-        create_token(&token, TOK_MINUS, 1);
-        break;
-    case '*':
-        create_token(&token, TOK_STAR, 1);
-        break;
-    case '/':
-        create_token(&token, TOK_SLASH, 1);
-        break;
-
-    case '<': {
-        if (look_ahead() == '=') {
-            advance();
-            create_token(&token, TOK_LT, 2);
-        } else {
-            create_token(&token, TOK_LESS, 1);
-        }
-    } break;
-
-    case '>': {
-        if (look_ahead() == '=') {
-            advance();
-            create_token(&token, TOK_GT, 2);
-        } else {
-            create_token(&token, TOK_GREATER, 1);
-        }
-    } break;
-
-    case '~': {
-        if (look_ahead() == '=') {
-            advance();
-            create_token(&token, TOK_INEQUALITY, 2);
-        } else {
-            // TODO manage the error
-            printf("ERROR: Invalid token\n");
-        }
-    } break;
-
-    case '=': {
-        if (look_ahead() == '=') {
-            advance();
-            create_token(&token, TOK_EQUALITY, 2);
-        } else {
-            create_token(&token, TOK_ASSIGN, 1);
-        }
-    } break;
-
-    case ' ':
-    case '\t':
-    case '\r':
-        create_token(&token, TOK_NULL, 1);
-        break;
+        case '!': {
+            if (look_ahead() == '=') {
+                advance();
+                create_token(&token, TOK_NE, 2);
+            } else {
+                create_token(&token, TOK_NOT, 1);
+            }
+        } break;
         
-    case '\n':
-        create_token(&token, TOK_NULL, 1);
-        t.line++;
-        break;
+        case '&': {
+            if (look_ahead() == '&') {
+                advance();
+                create_token(&token, TOK_AND, 2);
+            }
+        } break;
 
-    case '\0':
-        create_token(&token, TOK_EOF, 1);
-        break;
-    
-    default:
-        if (is_digit(t.ch)) {
-            int num_len = scan_number();
-            create_token(&token, TOK_NUMBER, num_len);
-        } else {
-            create_token(&token, TOK_ERROR, 1);
+        case '|': {
+            if (look_ahead() == '|') {
+                advance();
+                create_token(&token, TOK_OR, 2);
+            }
+        } break;
+
+        case '<': {
+            if (look_ahead() == '=') {
+                advance();
+                create_token(&token, TOK_LE, 2);
+            } else {
+                create_token(&token, TOK_LT, 1);
+            }
+        } break;
+
+        case '>': {
+            if (look_ahead() == '=') {
+                advance();
+                create_token(&token, TOK_GE, 2);
+            } else {
+                create_token(&token, TOK_GT, 1);
+            }
+        } break;
+
+        case '=': {
+            if (look_ahead() == '=') {
+                advance();
+                create_token(&token, TOK_EQ, 2);
+            } else {
+                create_token(&token, TOK_ASSIGN, 1);
+            }
+        } break;
+
+        case ' ':
+        case '\t':
+        case '\r':
+            break;
+            
+        case '\n':
+            tokenizer.line++;
+            break;
+
+        case '\0':
+            create_token(&token, TOK_EOF, 1);
+            break;
+        
+        default:
+            if (is_digit(tokenizer.ch)) {
+                int num_len = scan_number();
+                create_token(&token, TOK_NUMBER, num_len);
+            } else {
+                printf("Line %d: error: unknown token starting with '%c'.\n", tokenizer.line, tokenizer.ch);
+            }
         }
+
+        advance();
+        
+        if (token.start != NULL) ARR_PUSH(ta, token, Token);
+        if (token.type == TOK_EOF) break;
     }
-
-    advance();
-
-    return token;
 }
 
 static void create_token(Token *token, TokType type, int len)
 {
-    token->start = &t.source_code[t.cursor - (len-1)];
+    token->start = &tokenizer.source_code[tokenizer.cursor - (len-1)];
     token->len = len;
     token->type = type;
-    token->line = t.line;
+    token->line = tokenizer.line;
 }
 
 static void advance(void)
 {
-    if ((size_t)t.cursor + 1 < strlen(t.source_code)) {
-        t.cursor++;
-        t.ch = t.source_code[t.cursor];
+    if ((size_t)tokenizer.cursor + 1 < strlen(tokenizer.source_code)) {
+        tokenizer.cursor++;
+        tokenizer.ch = tokenizer.source_code[tokenizer.cursor];
     } else {
-        t.ch = '\0';
+        tokenizer.ch = '\0';
     }
 }
 
 static char look_ahead(void)
 {
-    int i = (size_t)t.cursor + 1 < strlen(t.source_code) ? t.cursor + 1 : t.cursor; 
-    return t.source_code[i];
+    int i;
+    if ((size_t)tokenizer.cursor + 1 < strlen(tokenizer.source_code)) {
+        i = tokenizer.cursor + 1;
+    } else {
+        i = tokenizer.cursor; 
+    }
+    return tokenizer.source_code[i];
 }
 
 static bool is_digit(char c) {
@@ -199,24 +191,34 @@ static char *tok_type_to_string(TokType tt)
     switch (tt)
     {
     case        TOK_ERROR: return "ERROR";
-    case   TOK_OPEN_PAREN: return "OPEN_PAREN";
-    case  TOK_CLOSE_PAREN: return "CLOSE_PAREN";
-    case  TOK_OPEN_SQUARE: return "OPEN_SQUARE";
-    case TOK_CLOSE_SQUARE: return "CLOSE_SQUARE";
-    case   TOK_OPEN_BRACE: return "OPEN_BRACE";
-    case  TOK_CLOSE_BRACE: return "CLOSE_BRACE";
+
+    case   TOK_OPAREN: return "OPEN_PAREN";
+    case  TOK_CPAREN: return "CLOSE_PAREN";
+    case  TOK_OSQUARE: return "OPEN_SQUARE";
+    case TOK_CSQUARE: return "CLOSE_SQUARE";
+    case   TOK_OBRACE: return "OPEN_BRACE";
+    case  TOK_CBRACE: return "CLOSE_BRACE";
+
     case         TOK_PLUS: return "PLUS";
     case        TOK_MINUS: return "MINUS";
     case         TOK_STAR: return "STAR";
     case        TOK_SLASH: return "SLASH";
-    case         TOK_LESS: return "LESS";
-    case      TOK_GREATER: return "GREATER";
+
     case           TOK_LT: return "LT";
     case           TOK_GT: return "GT";
+    case           TOK_LE: return "LE";
+    case           TOK_GE: return "GE";
+
     case       TOK_ASSIGN: return "ASSIGN";
-    case     TOK_EQUALITY: return "EQUALITY";
-    case   TOK_INEQUALITY: return "INEQUALITY";
+    case           TOK_EQ: return "EQ";
+    case           TOK_NE: return "NE";
+
+    case          TOK_NOT: return "NOT";
+    case          TOK_AND: return "AND";
+    case           TOK_OR: return "OR";
+    
     case       TOK_NUMBER: return "NUMBER";
+    
     case         TOK_NULL: return "NULL";
     case          TOK_EOF: return "EOF";
     
@@ -226,4 +228,3 @@ static char *tok_type_to_string(TokType tt)
 
     return NULL;
 }
-

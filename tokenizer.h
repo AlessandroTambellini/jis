@@ -5,28 +5,31 @@
 
 typedef enum TokType 
 {
+    TOK_NULL, 
     TOK_ERROR,
 
     // (), [], {}
-    TOK_OPEN_PAREN, TOK_CLOSE_PAREN,
-    TOK_OPEN_SQUARE, TOK_CLOSE_SQUARE,
-    TOK_OPEN_BRACE, TOK_CLOSE_BRACE,
+    TOK_OPAREN, TOK_CPAREN,
+    TOK_OSQUARE, TOK_CSQUARE,
+    TOK_OBRACE, TOK_CBRACE,
     
     // +, -, *, /
     TOK_PLUS, TOK_MINUS, 
     TOK_STAR, TOK_SLASH,
 
     // <, >, <=, >=
-    TOK_LESS, TOK_GREATER,
     TOK_LT, TOK_GT,
+    TOK_LE, TOK_GE,
 
-    // =, ==, ~=
+    // =, ==, !=
     TOK_ASSIGN,
-    TOK_EQUALITY, TOK_INEQUALITY,
+    TOK_EQ, TOK_NE,
+
+    TOK_NOT, TOK_AND, TOK_OR,
 
     TOK_NUMBER,
 
-    TOK_NULL, TOK_EOF
+    TOK_EOF
 } TokType;
 
 typedef struct Token {
@@ -47,7 +50,6 @@ typedef struct Tokenizer {
 
 void init_tokenizer(char *source_code);
 void collect_tokens(TokenArr *ta);
-Token get_next_token(void);
 void print_token(Token token);
 
 #endif // TOKENIZER_H
