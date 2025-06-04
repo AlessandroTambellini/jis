@@ -21,56 +21,59 @@ typedef struct Op {
     OpFamily family;
     int prec;
     TokType tok_type;
-    int name_len;
-    char *p_name;
 } Op;
 
-#define MAX_PREC 7
+/* There are 6 different precedence levels. 
+Don't confuse them with OpFamily! 
+Operators of the same family, might have a different precedence; e.g. '+' and '*'. */
+#define MAX_PREC 6 
 
 Op OpTable[] = 
 {
-    {GROUPING,   MAX_PREC,     TOK_OPAREN, 1, "("},
-    {GROUPING,   MAX_PREC,     TOK_CPAREN, 1, ")"},
-    {UNARY,      MAX_PREC - 1, TOK_NOT,    1, "!"},
-    {BINARY,     MAX_PREC - 2, TOK_STAR,   1, "*"},
-    {BINARY,     MAX_PREC - 2, TOK_SLASH,  1, "/"},
-    {BINARY,     MAX_PREC - 3, TOK_PLUS,   1, "+"},
-    {BINARY,     MAX_PREC - 3, TOK_MINUS,  1, "-"},
-    {COMPARISON, MAX_PREC - 4, TOK_LT,     1, "<"},
-    {COMPARISON, MAX_PREC - 4, TOK_GT,     1, ">"},
-    {COMPARISON, MAX_PREC - 4, TOK_LE,     2, "<="},
-    {COMPARISON, MAX_PREC - 4, TOK_GE,     2, ">="},
-    {COMPARISON, MAX_PREC - 4, TOK_EQ,     2, "=="},
-    {COMPARISON, MAX_PREC - 4, TOK_NE,     2, "!="},
-    {LOGICAL,    MAX_PREC - 5, TOK_AND,    2, "&&"},
-    {LOGICAL,    MAX_PREC - 5, TOK_OR,     2, "||"},
-    {0,          0,            TOK_NULL,   0, NULL} // Terminator
+    {GROUPING,   MAX_PREC,     TOK_OPAREN}, // (
+    {GROUPING,   MAX_PREC,     TOK_CPAREN}, // )
+    {UNARY,      MAX_PREC - 1, TOK_NOT   }, // !
+    {BINARY,     MAX_PREC - 2, TOK_STAR  }, // *
+    {BINARY,     MAX_PREC - 2, TOK_SLASH }, // /
+    {BINARY,     MAX_PREC - 3, TOK_PLUS  }, // +
+    {BINARY,     MAX_PREC - 3, TOK_MINUS }, // -
+    {COMPARISON, MAX_PREC - 4, TOK_LT    }, // <
+    {COMPARISON, MAX_PREC - 4, TOK_GT    }, // >
+    {COMPARISON, MAX_PREC - 4, TOK_LE    }, // <=
+    {COMPARISON, MAX_PREC - 4, TOK_GE    }, // >=
+    {COMPARISON, MAX_PREC - 4, TOK_EQ    }, // ==
+    {COMPARISON, MAX_PREC - 4, TOK_NE    }, // !=
+    {LOGICAL,    MAX_PREC - 5, TOK_AND   }, // &&
+    {LOGICAL,    MAX_PREC - 5, TOK_OR    }, // ||
+    {0,          0,            0         }  //  NULL (Terminator)
 };
 
-DECLARE_ARR(OpStack, Op) // TokType
+DECLARE_ARR(OpStack, Op)
 DECLARE_ARR(NumStack, int)
 
-Op OpTable_get_op(TokType tok_type);
-void get_tok_literal(char *tok_literal, Token token);
+static int parse_expression(TokenArr token_arr);
+// get_tok_literal() might be part of tokenizer.h
+static void get_tok_literal(char *tok_literal, Token token);
+static Op OpTable_get_op(TokType tok_type);
 
-void perform_unary_op(NumStack *numbers, TokType tok_type);
-void perform_binary_op(NumStack *numbers, TokType tok_type);
-void perform_comparison_op(NumStack *numbers, TokType tok_type);
-void perform_logical_op(NumStack *numbers, TokType tok_type);
-
-static char *op_to_literal(TokType tt);
+static void perform_unary_op(NumStack *numbers, TokType tok_type);
+static void perform_binary_op(NumStack *numbers, TokType tok_type);
+static void perform_comparison_op(NumStack *numbers, TokType tok_type);
+static void perform_logical_op(NumStack *numbers, TokType tok_type);
 
 // ARR_TOP is not usable because data of OpStack is a struct
-Op OpStack_top(OpStack operators) {
+static Op OpStack_top(OpStack operators) {
     return operators.size > 0 ? operators.data[operators.size - 1] : (Op){0};
 }
 
-// TODO(04/06) see where to move this piece
-/* The consequence of this approach is that 
-the expression is true if the result is different than 0, otherwise is false. Therefore, 
-it isn't a logical true/false. */
+void parse_tokens(TokenArr token_arr)
+{
+    // printf("%d\n", sizeof(OpFamily));
+    int expr_res = parse_expression(token_arr);
+    printf("expr_res: %d\n", expr_res);
+}
 
-void parse_tokens(TokenArr ta)
+int parse_expression(TokenArr token_arr)
 {
     OpStack operators;
     ARR_INIT(&operators);
@@ -79,9 +82,9 @@ void parse_tokens(TokenArr ta)
 
     int prec_lvl = 0;
 
-    for (int i = 0; i < ta.size; i++)
+    for (int i = 0; i < token_arr.size; i++)
     {
-        Token token = ta.data[i];
+        Token token = token_arr.data[i];
         
         char tok_literal[token.len + 1];
         get_tok_literal(tok_literal, token);
@@ -92,7 +95,7 @@ void parse_tokens(TokenArr ta)
         }
 
         Op new_op = OpTable_get_op(token.type);
-        if (new_op.p_name == NULL) {
+        if (new_op.prec == 0) { // The NULL Op
             printf("Line %d: expected an operator; got '%s' instead.\n", token.line, tok_literal);
             continue;
         }
@@ -134,7 +137,7 @@ void parse_tokens(TokenArr ta)
             }
 
             ARR_POP(&operators);
-            top_op = OpStack_top(operators); // OpTable_get_op(ARR_TOP(&operators))
+            top_op = OpStack_top(operators);
         }
 
         ARR_PUSH(&operators, new_op, Op);
@@ -142,7 +145,7 @@ void parse_tokens(TokenArr ta)
 
     // Missing trailing ')' are not a problem for the parsing. So, I just warn the user.
     if (prec_lvl != 0) {
-        printf("Line %d: warning: missing %d closing parenthesis.\n", ta.data[ta.size-1].line, prec_lvl);
+        printf("Line %d: warning: missing %d closing parenthesis.\n", token_arr.data[token_arr.size-1].line, prec_lvl);
     }
 
     // Perform remaining operations now ordered
@@ -171,34 +174,37 @@ void parse_tokens(TokenArr ta)
         ARR_POP(&operators);
     }
 
-    int res = ARR_TOP(&numbers);
+    int expr_res = ARR_TOP(&numbers);
+    ARR_POP(&numbers);
+
+    // Assert that everything was consumed
+    assert(operators.size == 0);
+    assert(numbers.size == 0);
 
     ARR_FREE(&operators);
     ARR_FREE(&numbers);
 
-    printf("res: %d\n", res);
-
-    // return res;
+    return expr_res;
 }
 
-void get_tok_literal(char *tok_literal, Token token)
+static void get_tok_literal(char *tok_literal, Token token)
 {
     memcpy(tok_literal, token.start, token.len + 1);
     tok_literal[token.len] = '\0';
 }
 
-Op OpTable_get_op(TokType tok_type)
+static Op OpTable_get_op(TokType tok_type)
 {
-    for (size_t i = 0; OpTable[i].p_name != NULL; i++) {
+    for (size_t i = 0; OpTable[i].prec != 0; i++) {
         if (OpTable[i].tok_type == tok_type) {
             return OpTable[i];
         }
     }
 
-    return (Op){0, 0, 0, 0, NULL};
+    return (Op){0, 0, 0};
 }
 
-void perform_unary_op(NumStack *numbers, TokType tok_type)
+static void perform_unary_op(NumStack *numbers, TokType tok_type)
 {
     if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
     int num = ARR_TOP(numbers);
@@ -214,7 +220,7 @@ void perform_unary_op(NumStack *numbers, TokType tok_type)
     ARR_PUSH(numbers, res, int);
 }
 
-void perform_binary_op(NumStack *numbers, TokType tok_type)
+static void perform_binary_op(NumStack *numbers, TokType tok_type)
 {
     // TODO errors are not properly managed
     if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
@@ -238,7 +244,6 @@ void perform_binary_op(NumStack *numbers, TokType tok_type)
         res = l_num * r_num; 
         break;
     case TOK_SLASH: 
-        // TODO manage floating point numbers
         res = l_num / r_num; 
         break; 
     default:
@@ -249,7 +254,7 @@ void perform_binary_op(NumStack *numbers, TokType tok_type)
     ARR_PUSH(numbers, res, int);
 }
 
-void perform_comparison_op(NumStack *numbers, TokType tok_type)
+static void perform_comparison_op(NumStack *numbers, TokType tok_type)
 {
     if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
     int r_num = ARR_TOP(numbers);
@@ -290,7 +295,7 @@ void perform_comparison_op(NumStack *numbers, TokType tok_type)
     ARR_PUSH(numbers, res, int);
 }
 
-void perform_logical_op(NumStack *numbers, TokType tok_type)
+static void perform_logical_op(NumStack *numbers, TokType tok_type)
 {
     if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
     int r_num = ARR_TOP(numbers);
@@ -306,37 +311,4 @@ void perform_logical_op(NumStack *numbers, TokType tok_type)
     else assert("Unreachable" && false);
 
     ARR_PUSH(numbers, res, int);
-}
-
-static char *op_to_literal(TokType tt)
-{
-    switch (tt)
-    {
-    case TOK_OPAREN: return "(";
-    case TOK_CPAREN: return ")";
-
-    case   TOK_PLUS: return "+";
-    case  TOK_MINUS: return "-";
-    case   TOK_STAR: return "*";
-    case  TOK_SLASH: return "/";
-
-    case     TOK_LT: return "<";
-    case     TOK_GT: return ">";
-    case     TOK_LE: return "<=";
-    case     TOK_GE: return ">=";
-
-    case TOK_ASSIGN: return "=";
-    case     TOK_EQ: return "==";
-    case     TOK_NE: return "!=";
-
-    case    TOK_NOT: return "!";
-    case    TOK_AND: return "&&";
-    case     TOK_OR: return "||";
-    
-    default:
-        assert("Unreachable" && false);
-        break;
-    }
-
-    return NULL;
 }
