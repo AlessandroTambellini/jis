@@ -9,8 +9,12 @@
 
 static void advance(void);
 static char look_ahead(void);
+
 static bool is_digit(char c);
-static int scan_number(void);
+static bool is_alpha(char c);
+static int get_number_len(void);
+static int get_alpha_len(void);
+
 static void create_token(Token *token, TokType type, int len);
 static char *tok_type_to_string(TokType tt);
 
@@ -30,6 +34,7 @@ void collect_tokens(TokenArr *ta)
     for (;;)
     {
         Token token = {0};
+        bool eof = false;
 
         switch (tokenizer.ch)
         {
@@ -113,22 +118,27 @@ void collect_tokens(TokenArr *ta)
             break;
 
         case '\0':
-            create_token(&token, TOK_EOF, 1);
+            // create_token(&token, TOK_EOF, 1);
+            eof = true;
             break;
         
-        default:
-            if (is_digit(tokenizer.ch)) {
-                int num_len = scan_number();
+        default: {
+            if (is_digit(tokenizer.ch) || tokenizer.ch == '.') {
+                int num_len = get_number_len();
                 create_token(&token, TOK_NUMBER, num_len);
+            } else if (is_alpha(tokenizer.ch)) {
+                int alpha_len = get_alpha_len();
+                create_token(&token, TOK_ALPHA, alpha_len);
             } else {
                 printf("Line %d: error: unknown token starting with '%c'.\n", tokenizer.line, tokenizer.ch);
             }
+        } break;
         }
 
         advance();
         
         if (token.start != NULL) ARR_PUSH(ta, token, Token);
-        if (token.type == TOK_EOF) break;
+        if (eof) break;
     }
 }
 
@@ -165,23 +175,47 @@ static bool is_digit(char c) {
     return '0' <= c && c <= '9';
 }
 
-// TODO scan floating point numbers
-static int scan_number(void) 
+static bool is_alpha(char c) {
+    return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
+}
+
+static int get_number_len(void) 
 {
+    /* there can be a digit or a dot. if a dot is found, it cannot be repeated anymore
+    and it cannot be at the end of the number. */
+
     int len = 1;
-    while (is_digit(look_ahead()))
-    {
+    int dots = tokenizer.ch == '.' ? 1 : 0;
+    while (is_digit(look_ahead()) || look_ahead() == '.') {
+        if (look_ahead() == '.') dots++;
         len++;
         advance();
     }
 
+    if (tokenizer.ch == '.') printf("Line %d: '.' at the end of number.\n", tokenizer.line);
+    if (dots > 1) printf("Line %d: more than a single '.' in number.\n", tokenizer.line);
+
+    /* NOTE: With this approach, if a string like '123abc' is encountered, 
+    '123' is taken and 'abc' left for the next tokenization cycle. */
+
+    return len;
+}
+
+static int get_alpha_len(void) 
+{
+    // TODO this approach doesn't allow '_' and numbers inside the string
+    int len = 1;
+    while (is_alpha(look_ahead())) {
+        len++;
+        advance();
+    }
     return len;
 }
 
 void print_token(Token token)
 {
     for (int i = 0; i < token.len; i++) {
-        printf("%c", token.start[i]);
+        if (token.type != TOK_EOF) printf("%c", token.start[i]);
     }
     printf(": %s", tok_type_to_string(token.type));
 }
@@ -218,12 +252,14 @@ static char *tok_type_to_string(TokType tt)
     case           TOK_OR: return "OR";
     
     case       TOK_NUMBER: return "NUMBER";
+    case       TOK_ALPHA: return "ALPHA";
     
     case         TOK_NULL: return "NULL";
     case          TOK_EOF: return "EOF";
     
     default:
         assert("Unreachable" && false);
+        break;
     }
 
     return NULL;
