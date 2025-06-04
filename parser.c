@@ -25,27 +25,29 @@ typedef struct Op {
     char *p_name;
 } Op;
 
+#define MAX_PREC 7
+
 Op OpTable[] = 
 {
-    {GROUPING,   7, TOK_OPAREN, 1, ")"},
-    {GROUPING,   7, TOK_CPAREN, 1, "("},
-    {UNARY,      6, TOK_NOT,    1, "!"},
-    {BINARY,     4, TOK_STAR,   1, "*"},
-    {BINARY,     4, TOK_SLASH,  1, "/"},
-    {BINARY,     3, TOK_PLUS,   1, "+"},
-    {BINARY,     3, TOK_MINUS,  1, "-"},
-    {COMPARISON, 2, TOK_LT,     1, "<"},
-    {COMPARISON, 2, TOK_GT,     1, ">"},
-    {COMPARISON, 2, TOK_LE,     2, "<="},
-    {COMPARISON, 2, TOK_GE,     2, ">="},
-    {COMPARISON, 2, TOK_EQ,     2, "=="},
-    {COMPARISON, 2, TOK_NE,     2, "!="},
-    {LOGICAL,    1, TOK_AND,    2, "&&"},
-    {LOGICAL,    1, TOK_OR,     2, "||"},
-    {0,          0, TOK_NULL,   0, NULL} // Terminator
+    {GROUPING,   MAX_PREC,     TOK_OPAREN, 1, "("},
+    {GROUPING,   MAX_PREC,     TOK_CPAREN, 1, ")"},
+    {UNARY,      MAX_PREC - 1, TOK_NOT,    1, "!"},
+    {BINARY,     MAX_PREC - 2, TOK_STAR,   1, "*"},
+    {BINARY,     MAX_PREC - 2, TOK_SLASH,  1, "/"},
+    {BINARY,     MAX_PREC - 3, TOK_PLUS,   1, "+"},
+    {BINARY,     MAX_PREC - 3, TOK_MINUS,  1, "-"},
+    {COMPARISON, MAX_PREC - 4, TOK_LT,     1, "<"},
+    {COMPARISON, MAX_PREC - 4, TOK_GT,     1, ">"},
+    {COMPARISON, MAX_PREC - 4, TOK_LE,     2, "<="},
+    {COMPARISON, MAX_PREC - 4, TOK_GE,     2, ">="},
+    {COMPARISON, MAX_PREC - 4, TOK_EQ,     2, "=="},
+    {COMPARISON, MAX_PREC - 4, TOK_NE,     2, "!="},
+    {LOGICAL,    MAX_PREC - 5, TOK_AND,    2, "&&"},
+    {LOGICAL,    MAX_PREC - 5, TOK_OR,     2, "||"},
+    {0,          0,            TOK_NULL,   0, NULL} // Terminator
 };
 
-DECLARE_ARR(OpStack, TokType)
+DECLARE_ARR(OpStack, Op) // TokType
 DECLARE_ARR(NumStack, int)
 
 Op OpTable_get_op(TokType tok_type);
@@ -58,17 +60,24 @@ void perform_logical_op(NumStack *numbers, TokType tok_type);
 
 static char *op_to_literal(TokType tt);
 
+// ARR_TOP is not usable because data of OpStack is a struct
+Op OpStack_top(OpStack operators) {
+    return operators.size > 0 ? operators.data[operators.size - 1] : (Op){0};
+}
+
+// TODO(04/06) see where to move this piece
+/* The consequence of this approach is that 
+the expression is true if the result is different than 0, otherwise is false. Therefore, 
+it isn't a logical true/false. */
+
 void parse_tokens(TokenArr ta)
 {
-    // Explanation of the Stack-based expression parsing [From 7:40]: https://youtu.be/c2nR3Ua4CFI?si=G-YMsmXbP65WApAh&t=460
-    /* The consequence of this approach is that 
-    the expression is true if the result is different than 0, otherwise is false. Therefore, 
-    it isn't a logical true/false. */
-
     OpStack operators;
     ARR_INIT(&operators);
     NumStack numbers;
     ARR_INIT(&numbers);
+
+    int prec_lvl = 0;
 
     for (int i = 0; i < ta.size; i++)
     {
@@ -85,18 +94,28 @@ void parse_tokens(TokenArr ta)
         Op new_op = OpTable_get_op(token.type);
         if (new_op.p_name == NULL) {
             printf("Line %d: expected an operator; got '%s' instead.\n", token.line, tok_literal);
-            // printf("the new_op of type %d isn't a valid operator.\n", token.type);
             continue;
         }
 
-        Op top_op = OpTable_get_op(ARR_TOP(&operators));
+        if (new_op.tok_type == TOK_OPAREN) {
+            prec_lvl++;
+            continue;
+        }
 
-        while (!ARR_IS_EMPTY(&operators) && top_op.prec >= new_op.prec && top_op.tok_type != TOK_OPAREN)
+        if (new_op.tok_type == TOK_CPAREN) {
+            prec_lvl--;
+            continue;
+        }
+        
+        new_op.prec += MAX_PREC * prec_lvl;
+
+        Op top_op = OpStack_top(operators);
+
+        // Explanation of the Stack-based precedence parsing [From 7:40]: https://youtu.be/c2nR3Ua4CFI?si=G-YMsmXbP65WApAh&t=460
+        while (!ARR_IS_EMPTY(&operators) && top_op.prec >= new_op.prec)
         {
             switch (top_op.family)
             {
-            case GROUPING:
-                break;
             case UNARY:
                 perform_unary_op(&numbers, top_op.tok_type);
                 break;
@@ -115,28 +134,51 @@ void parse_tokens(TokenArr ta)
             }
 
             ARR_POP(&operators);
-            top_op = OpTable_get_op(ARR_TOP(&operators));
+            top_op = OpStack_top(operators); // OpTable_get_op(ARR_TOP(&operators))
         }
 
-        ARR_PUSH(&operators, new_op.tok_type, TokType);
+        ARR_PUSH(&operators, new_op, Op);
     } // for()
 
-#ifdef PDEBUG
-    printf("nums: ");
-    for (int i = 0; i < numbers.size; i++) {
-        printf("%d ", numbers.data[i]);
+    // Missing trailing ')' are not a problem for the parsing. So, I just warn the user.
+    if (prec_lvl != 0) {
+        printf("Line %d: warning: missing %d closing parenthesis.\n", ta.data[ta.size-1].line, prec_lvl);
     }
-    printf("\n");
 
-    printf("ops: ");
-    for (int i = 0; i < operators.size; i++) {
-        printf("%s ", op_to_literal(operators.data[i]));
+    // Perform remaining operations now ordered
+    while (!ARR_IS_EMPTY(&operators))
+    {
+        Op op = OpStack_top(operators);
+        switch (op.family)
+        {
+        case UNARY:
+            perform_unary_op(&numbers, op.tok_type);
+            break;
+        case BINARY:
+            perform_binary_op(&numbers, op.tok_type);
+            break;
+        case COMPARISON:
+            perform_comparison_op(&numbers, op.tok_type);
+            break;
+        case LOGICAL:
+            perform_logical_op(&numbers, op.tok_type);
+            break;
+        default:
+            assert("Unreachable" && false);
+            break;
+        }
+
+        ARR_POP(&operators);
     }
-    printf("\n");
-#endif
+
+    int res = ARR_TOP(&numbers);
 
     ARR_FREE(&operators);
     ARR_FREE(&numbers);
+
+    printf("res: %d\n", res);
+
+    // return res;
 }
 
 void get_tok_literal(char *tok_literal, Token token)
