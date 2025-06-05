@@ -9,6 +9,12 @@
 #include "array.h"
 #include "tokenizer.h"
 
+typedef struct Parser {
+    bool error;
+    char *err_msg;
+    int line;
+} Parser;
+
 typedef enum OpFamily {
     GROUPING,
     UNARY,
@@ -66,9 +72,14 @@ static Op OpStack_top(OpStack operators) {
     return operators.size > 0 ? operators.data[operators.size - 1] : (Op){0};
 }
 
+Parser parser = {
+    .error = false,
+    .err_msg = NULL,
+    .line = 0,
+};
+
 void parse_tokens(TokenArr token_arr)
 {
-    // printf("%d\n", sizeof(OpFamily));
     int expr_res = parse_expression(token_arr);
     printf("expr_res: %d\n", expr_res);
 }
@@ -80,11 +91,15 @@ int parse_expression(TokenArr token_arr)
     NumStack numbers;
     ARR_INIT(&numbers);
 
+    int expr_res = 0;
     int prec_lvl = 0;
 
     for (int i = 0; i < token_arr.size; i++)
     {
         Token token = token_arr.data[i];
+
+        // PARSER
+        parser.line = token.line;
         
         char tok_literal[token.len + 1];
         get_tok_literal(tok_literal, token);
@@ -96,8 +111,24 @@ int parse_expression(TokenArr token_arr)
 
         Op new_op = OpTable_get_op(token.type);
         if (new_op.prec == 0) { // The NULL Op
-            printf("Line %d: expected an operator; got '%s' instead.\n", token.line, tok_literal);
-            continue;
+            printf("Line %d: expected an operator, but got '%s' instead.\n", parser.line, tok_literal);
+            parser.error = true;
+            goto error;
+        }
+
+        // TODO this if check and the next one seem hard coded to me. I'll go ahead in the development
+        // of the parser and see if a good solution is going to take shape on its own.
+        if (new_op.family == UNARY && i < token_arr.size-1 && token_arr.data[i+1].type != TOK_NUMBER) {
+            get_tok_literal(tok_literal, token_arr.data[i+1]);
+            printf("Line %d: expected a number after unary operator, but got '%s' instead.\n", parser.line, tok_literal);
+            parser.error = true;
+            goto error;
+        }
+        
+        if (new_op.family == UNARY && i == token_arr.size-1) {
+            printf("Line %d: expected a number after unary operator, but reached EOF instead.\n", parser.line);
+            parser.error = true;
+            goto error;
         }
 
         if (new_op.tok_type == TOK_OPAREN) {
@@ -136,6 +167,8 @@ int parse_expression(TokenArr token_arr)
                 break;
             }
 
+            if (parser.error) goto error;
+
             ARR_POP(&operators);
             top_op = OpStack_top(operators);
         }
@@ -148,7 +181,7 @@ int parse_expression(TokenArr token_arr)
         printf("Line %d: warning: missing %d closing parenthesis.\n", token_arr.data[token_arr.size-1].line, prec_lvl);
     }
 
-    // Perform remaining operations now ordered
+    // Perform remaining operations in order of apparence
     while (!ARR_IS_EMPTY(&operators))
     {
         Op op = OpStack_top(operators);
@@ -171,16 +204,19 @@ int parse_expression(TokenArr token_arr)
             break;
         }
 
+        if (parser.error) goto error;
+
         ARR_POP(&operators);
     }
 
-    int expr_res = ARR_TOP(&numbers);
+    expr_res = ARR_TOP(&numbers);
     ARR_POP(&numbers);
 
     // Assert that everything was consumed
     assert(operators.size == 0);
     assert(numbers.size == 0);
-
+    
+error:
     ARR_FREE(&operators);
     ARR_FREE(&numbers);
 
@@ -206,7 +242,12 @@ static Op OpTable_get_op(TokType tok_type)
 
 static void perform_unary_op(NumStack *numbers, TokType tok_type)
 {
-    if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
+    if (ARR_IS_EMPTY(numbers)) {
+        printf("Line %d: while parsing expression: expected number to perform unary operation.\n", parser.line);
+        parser.error = true;
+        return;
+    }
+
     int num = ARR_TOP(numbers);
     ARR_POP(numbers);
 
@@ -222,12 +263,19 @@ static void perform_unary_op(NumStack *numbers, TokType tok_type)
 
 static void perform_binary_op(NumStack *numbers, TokType tok_type)
 {
-    // TODO errors are not properly managed
-    if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
+    if (ARR_IS_EMPTY(numbers)) {
+        printf("Line %d: while parsing expression: expected right-hand side number to perform binary operation.\n", parser.line);
+        parser.error = true;
+        return;
+    }
     int r_num = ARR_TOP(numbers);
     ARR_POP(numbers);
 
-    if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
+    if (ARR_IS_EMPTY(numbers)) {
+        printf("Line %d: while parsing expression: expected left-hand side number to perform binary operation.\n", parser.line);
+        parser.error = true;
+        return;
+    }
     int l_num = ARR_TOP(numbers);
     ARR_POP(numbers);
 
@@ -256,15 +304,21 @@ static void perform_binary_op(NumStack *numbers, TokType tok_type)
 
 static void perform_comparison_op(NumStack *numbers, TokType tok_type)
 {
-    if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
+    if (ARR_IS_EMPTY(numbers)) {
+        printf("Line %d: while parsing expression: expected right-hand side number to perform comparison operation.\n", parser.line);
+        parser.error = true;
+        return;
+    }
     int r_num = ARR_TOP(numbers);
     ARR_POP(numbers);
 
-    if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
+    if (ARR_IS_EMPTY(numbers)) {
+        printf("Line %d: while parsing expression: expected left-hand side number to perform comparison operation.\n", parser.line);
+        parser.error = true;
+        return;
+    }
     int l_num = ARR_TOP(numbers);
     ARR_POP(numbers);
-
-    // l_num and r_num stand for number on the left and on the right of the comparison operator.
 
     int res = 0;
     switch (tok_type)
@@ -297,11 +351,19 @@ static void perform_comparison_op(NumStack *numbers, TokType tok_type)
 
 static void perform_logical_op(NumStack *numbers, TokType tok_type)
 {
-    if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
+    if (ARR_IS_EMPTY(numbers)) {
+        printf("Line %d: while parsing expression: expected right-hand side number to perform logical operation.\n", parser.line);
+        parser.error = true;
+        return;
+    }
     int r_num = ARR_TOP(numbers);
     ARR_POP(numbers);
 
-    if (ARR_IS_EMPTY(numbers)) printf("ERROR: numbers stack is empty.\n");
+    if (ARR_IS_EMPTY(numbers)) {
+        printf("Line %d: while parsing expression: expected left-hand side number to perform logical operation.\n", parser.line);
+        parser.error = true;
+        return;
+    }
     int l_num = ARR_TOP(numbers);
     ARR_POP(numbers);
 
