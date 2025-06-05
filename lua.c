@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "tokenizer.h"
 #include "parser.h"
@@ -60,7 +61,8 @@ void interpret(char *source_code)
 	TokenArr ta;
 	ARR_INIT(&ta);
 
-	collect_tokens(&ta);
+	bool tokenization_err = false;
+	collect_tokens(&ta, &tokenization_err);
 
 #ifdef TDEBUG
     printf("TOKENS:\n");
@@ -72,9 +74,11 @@ void interpret(char *source_code)
 #endif // DEBUG
 
 	// 2 - Parsing Phase
-	/* I do not pass the address because I don't have to modify ta anymore.
-	I just need it's size and the address of the tokens array. */
-	//parse_tokens(ta);
+	if (tokenization_err) {
+		printf("Parsing aborted.\n");
+	} else {
+		parse_tokens(ta);
+	}
 
 	ARR_FREE(&ta);
 }

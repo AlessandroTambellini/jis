@@ -5,7 +5,6 @@
 
 typedef enum TokType 
 {
-    TOK_NULL, 
     TOK_ERROR,
 
     // (), [], {}
@@ -27,7 +26,7 @@ typedef enum TokType
 
     TOK_NOT, TOK_AND, TOK_OR,
 
-    TOK_NUMBER,
+    TOK_NUMBER, TOK_ALPHA,
 
     TOK_EOF
 } TokType;
@@ -49,7 +48,7 @@ typedef struct Tokenizer {
 } Tokenizer;
 
 void init_tokenizer(char *source_code);
-void collect_tokens(TokenArr *ta);
+void collect_tokens(TokenArr *ta, bool *error);
 void print_token(Token token);
 
 #endif // TOKENIZER_H

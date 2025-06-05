@@ -12,7 +12,7 @@ static char look_ahead(void);
 
 static bool is_digit(char c);
 static bool is_alpha(char c);
-static int get_number_len(void);
+static int get_number_len(bool *error);
 static int get_alpha_len(void);
 
 static void create_token(Token *token, TokType type, int len);
@@ -29,7 +29,7 @@ void init_tokenizer(char *source_code)
     advance();
 }
 
-void collect_tokens(TokenArr *ta)
+void collect_tokens(TokenArr *ta, bool *error)
 {
     for (;;)
     {
@@ -124,13 +124,14 @@ void collect_tokens(TokenArr *ta)
         
         default: {
             if (is_digit(tokenizer.ch) || tokenizer.ch == '.') {
-                int num_len = get_number_len();
+                int num_len = get_number_len(error);
                 create_token(&token, TOK_NUMBER, num_len);
             } else if (is_alpha(tokenizer.ch)) {
                 int alpha_len = get_alpha_len();
                 create_token(&token, TOK_ALPHA, alpha_len);
             } else {
                 printf("Line %d: error: unknown token starting with '%c'.\n", tokenizer.line, tokenizer.ch);
+                *error = true;
             }
         } break;
         }
@@ -179,7 +180,7 @@ static bool is_alpha(char c) {
     return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
 }
 
-static int get_number_len(void) 
+static int get_number_len(bool *error) 
 {
     /* there can be a digit or a dot. if a dot is found, it cannot be repeated anymore
     and it cannot be at the end of the number. */
@@ -192,8 +193,14 @@ static int get_number_len(void)
         advance();
     }
 
-    if (tokenizer.ch == '.') printf("Line %d: '.' at the end of number.\n", tokenizer.line);
-    if (dots > 1) printf("Line %d: more than a single '.' in number.\n", tokenizer.line);
+    if (tokenizer.ch == '.') {
+        printf("Line %d: '.' at the end of number.\n", tokenizer.line);
+        *error = true;
+    }
+    if (dots > 1) {
+        printf("Line %d: more than a single '.' in number.\n", tokenizer.line);
+        *error = true;
+    }
 
     /* NOTE: With this approach, if a string like '123abc' is encountered, 
     '123' is taken and 'abc' left for the next tokenization cycle. */
@@ -254,7 +261,6 @@ static char *tok_type_to_string(TokType tt)
     case       TOK_NUMBER: return "NUMBER";
     case       TOK_ALPHA: return "ALPHA";
     
-    case         TOK_NULL: return "NULL";
     case          TOK_EOF: return "EOF";
     
     default:
