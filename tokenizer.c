@@ -13,7 +13,7 @@ static char look_ahead(void);
 static bool is_digit(char c);
 static bool is_alpha(char c);
 static int get_number_len(bool *error);
-static int get_alpha_len(void);
+static int get_identifier_len(void);
 
 static void create_token(Token *token, TokType type, int len);
 static char *tok_type_to_string(TokType tt);
@@ -26,6 +26,7 @@ void init_tokenizer(char *source_code)
     tokenizer.source_code = source_code;
     tokenizer.cursor = -1;
     tokenizer.line = 1;
+    tokenizer.ch = 0;
     advance();
 }
 
@@ -108,6 +109,16 @@ void collect_tokens(TokenArr *ta, bool *error)
             }
         } break;
 
+        case ';':
+            create_token(&token, TOK_SEMICOLON, 1);
+            break;
+        case '{':
+            create_token(&token, TOK_OBRACE, 1);
+            break;
+        case '}':
+            create_token(&token, TOK_CBRACE, 1);
+            break;
+
         case ' ':
         case '\t':
         case '\r':
@@ -118,17 +129,28 @@ void collect_tokens(TokenArr *ta, bool *error)
             break;
 
         case '\0':
-            // create_token(&token, TOK_EOF, 1);
-            eof = true;
+            create_token(&token, TOK_EOF, 1);
+            eof = true; // Do I need this variable? Probably not.
             break;
         
         default: {
             if (is_digit(tokenizer.ch) || tokenizer.ch == '.') {
                 int num_len = get_number_len(error);
                 create_token(&token, TOK_NUMBER, num_len);
-            } else if (is_alpha(tokenizer.ch)) {
-                int alpha_len = get_alpha_len();
-                create_token(&token, TOK_ALPHA, alpha_len);
+            } 
+            else if (is_alpha(tokenizer.ch) || tokenizer.ch == '_') 
+            {
+                char *start = &tokenizer.source_code[tokenizer.cursor];
+                int len = get_identifier_len();
+
+                TokType type = TOK_VARIABLE;
+                // Keywords
+                if (strncmp("if", start, len) == 0) type = TOK_IF;
+                else if (strncmp("else", start, len) == 0) type = TOK_ELSE;
+                else if (strncmp("while", start, len) == 0) type = TOK_WHILE;
+
+                create_token(&token, type, len);
+
             } else {
                 printf("Line %d: error: unknown token starting with '%c'.\n", tokenizer.line, tokenizer.ch);
                 *error = true;
@@ -208,11 +230,10 @@ static int get_number_len(bool *error)
     return len;
 }
 
-static int get_alpha_len(void) 
+static int get_identifier_len(void) 
 {
-    // TODO this approach doesn't allow '_' and numbers inside the string
     int len = 1;
-    while (is_alpha(look_ahead())) {
+    while (is_alpha(look_ahead()) || look_ahead() == '_' || is_digit(look_ahead())) {
         len++;
         advance();
     }
@@ -222,7 +243,11 @@ static int get_alpha_len(void)
 void print_token(Token token)
 {
     for (int i = 0; i < token.len; i++) {
-        if (token.type != TOK_EOF) printf("%c", token.start[i]);
+        if (token.type == TOK_EOF) {
+            printf("EOF");
+        } else {
+            printf("%c", token.start[i]);
+        }
     }
     printf(": %s", tok_type_to_string(token.type));
 }
@@ -259,7 +284,12 @@ static char *tok_type_to_string(TokType tt)
     case           TOK_OR: return "OR";
     
     case       TOK_NUMBER: return "NUMBER";
-    case       TOK_ALPHA: return "ALPHA";
+    case     TOK_VARIABLE: return "VARIABLE";
+    case      TOK_IF: return "IF";
+    case      TOK_ELSE: return "ELSE";
+    case      TOK_WHILE: return "WHILE";
+    
+    case      TOK_SEMICOLON: return "SEMICOLON";
     
     case          TOK_EOF: return "EOF";
     
