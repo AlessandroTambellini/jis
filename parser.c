@@ -72,16 +72,23 @@ DECLARE_ARR(VarStack, Variable)
 DECLARE_ARR(OpStack, Op)
 DECLARE_ARR(NumStack, int)
 
-static void parse_block(void);
-static void parse_if(void);
+static void parse_block(bool branching);
+static void parse_if(bool branching);
 static void parse_while(void);
-static void parse_variable(void);
-static void parse_print(void);
+static void parse_variable(bool branching);
+static void parse_print(bool branching);
 static int parse_expression(void);
 
 static void advance(void);
 static void consume(TokType type, char *err_msg);
+
+static void jump_back(Token old_token, int old_cursor, int old_scope);
+static void jump_forward(Token last_token, int last_cursor, int last_scope);
+static void save_state(Token token, int cursor, int scope);
+
 static void report_error(char *err_msg);
+
+int lookup_variable(char *name_addr, int name_len);
 
 static bool at_end_symbol(TokType type);
 
@@ -126,6 +133,25 @@ static void consume(TokType type, char *err_msg) {
     }
 }
 
+static void jump_back(Token old_token, int old_cursor, int old_scope) 
+{
+    parser.token = old_token;
+    parser.cursor = old_cursor;
+    parser.scope = old_scope;
+}
+
+static void jump_forward(Token last_token, int last_cursor, int last_scope)
+{
+    parser.token = last_token;
+    parser.cursor = last_cursor;
+    parser.scope = last_scope;
+}
+
+static void save_state(Token token, int cursor, int scope)
+{
+    // TODO static fields is not a solution
+}
+
 static void report_error(char *err_msg) {
     // I leave these two properties inside parser for now,
     // even though I don't know if they may have some utility.
@@ -144,6 +170,22 @@ static bool at_end_symbol(TokType type)
     return false;
 }
 
+int lookup_variable(char *name_addr, int name_len)
+{
+    for (int i = 0; i < variables.size; i++) {
+        if (name_len == variables.data[i].name_len &&
+            strncmp(variables.data[i].name_addr, name_addr, name_len) == 0) 
+        {
+            return variables.data[i].value;
+        }
+    }
+
+    char err_buffer[ERR_MSG_SIZE];
+    snprintf(err_buffer, ERR_MSG_SIZE, "variable '%.*s' not declared", name_len, name_addr);
+    report_error(err_buffer);
+    return -1;
+}
+
 void parse_tokens(void)
 {
     ARR_INIT(&variables);
@@ -156,25 +198,25 @@ void parse_tokens(void)
             break;
         }
 
-        parse_block();
+        parse_block(true);
     }
 }
 
-static void parse_block(void)
+static void parse_block(bool branched)
 {
     switch (parser.token.type)
     {
     case TOK_IF:
-        parse_if();
+        parse_if(branched);
         break;
     case TOK_WHILE:
         parse_while();
         break;
     case TOK_VARIABLE:
-        parse_variable();
+        parse_variable(branched);
         break;
     case TOK_PRINT:
-        parse_print();
+        parse_print(branched);
         break;
     default:
         assert("Unreachable" && false);
@@ -182,7 +224,7 @@ static void parse_block(void)
     }
 }
 
-static void parse_if(void)
+static void parse_if(bool branched)
 {
     // Header
     parser.scope++;
@@ -190,24 +232,23 @@ static void parse_if(void)
 
     // Body
     int expr_res = parse_expression();
-    (void) expr_res;
+    bool if_branching = expr_res != 0 ? true : false;
     
     consume(TOK_OBRACE, "expected '{'");
     while (!at_end_symbol(TOK_CBRACE))
     {
-        parse_block();
+        parse_block(branched && if_branching);
     }
     consume(TOK_CBRACE, "expected '}'");
 
     // Optional else
-    // TODO implement match() function?
-    if (strncmp("else", parser.token.start, parser.token.len) == 0)
+    if (strlen("else") == parser.token.len && strncmp("else", parser.token.start, parser.token.len) == 0)
     {
         advance();
         consume(TOK_OBRACE, "expected '{'");
         while (!at_end_symbol(TOK_CBRACE))
         {
-            parse_block();
+            parse_block(branched && !if_branching);
         }
         consume(TOK_CBRACE, "expected '}'");
     }
@@ -223,13 +264,33 @@ static void parse_while(void)
     advance();
 
     // Body
-    int expr_res = parse_expression();
-    (void) expr_res;
+    Token current_token = parser.token;
+    int current_cursor = parser.cursor;
+    int current_scope = parser.scope; // Do I need it?
 
+    int expr_res = parse_expression();
     consume(TOK_OBRACE, "expected '{'");
-    while (!at_end_symbol(TOK_CBRACE))
+
+    bool exec_body = expr_res != 0 ? true : false;
+
+    while (exec_body)
     {
-        parse_block();
+        while (!at_end_symbol(TOK_CBRACE))
+        {
+            parse_block(exec_body);
+        }
+        Token last_token = parser.token;
+        int last_cursor = parser.cursor;
+        int last_scope = parser.scope; 
+
+        jump_back(current_token, current_cursor, current_scope);
+
+        expr_res = parse_expression();
+        consume(TOK_OBRACE, "expected '{'");
+
+        exec_body = expr_res != 0 ? true : false;
+
+        if (!exec_body) jump_forward(last_token, last_cursor, last_scope);
     }
     consume(TOK_CBRACE, "expected '}'");
 
@@ -237,7 +298,7 @@ static void parse_while(void)
     parser.scope--;
 }
 
-static void parse_variable(void)
+static void parse_variable(bool branched)
 {
     // Create the var struct in any case
     Variable var;
@@ -261,22 +322,25 @@ static void parse_variable(void)
         char err_buffer[ERR_MSG_SIZE];
         snprintf(err_buffer, ERR_MSG_SIZE, "variable '%.*s' declared in local scope", var.name_len, var.name_addr);
         report_error(err_buffer);
-        // return;
     }
 
     consume(TOK_ASSIGN, "expected '=' after variable name");
     int expr_res = parse_expression();
     consume(TOK_SEMICOLON, "expected ';' at the end of expression");
     
-    if (is_new) {
-        var.value = expr_res;
-        ARR_PUSH(&variables, var, Variable);
-    } else {
-        variables.data[var_index].value = expr_res;
+    // If the branch in which this variable is located, is executed, so assign the value to it.
+    if (branched)
+    {
+        if (is_new) {
+            var.value = expr_res;
+            ARR_PUSH(&variables, var, Variable);
+        } else {
+            variables.data[var_index].value = expr_res;
+        }
     }
 }
 
-static void parse_print(void)
+static void parse_print(bool branched)
 {
     // Header
     advance();
@@ -285,8 +349,9 @@ static void parse_print(void)
     int expr_res = parse_expression();
     consume(TOK_SEMICOLON, "expected ';' at the end of the print expression");
 
-    // Meh
-    printf("%d\n", expr_res);
+    if (branched) {
+        printf("%d\n", expr_res);
+    }
 }
 
 /*
@@ -319,7 +384,8 @@ static int parse_expression(void)
         }
 
         if (token.type == TOK_VARIABLE) {
-            // TODO lookup variable
+            int var_value = lookup_variable(token.start, token.len);
+            ARR_PUSH(&numbers, var_value, int);
             advance(); // TODO find solution to remove advance() from here
             continue;
         }
