@@ -1,3 +1,4 @@
 #include "tokenizer.h"
 
-void parse_tokens(TokenArr ta);
+void init_parser(TokenArr token_arr);
+void parse_tokens(void);
