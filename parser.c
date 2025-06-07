@@ -80,7 +80,7 @@ static void parse_print(void);
 static int parse_expression(void);
 
 static void advance(void);
-static bool consume(TokType type, const char *err_msg);
+static void consume(TokType type, char *err_msg);
 static void report_error(char *err_msg);
 
 static bool at_end_symbol(TokType type);
@@ -118,20 +118,23 @@ static void advance(void)
     }
 }
 
-static bool consume(TokType type, const char *err_msg) {
+static void consume(TokType type, char *err_msg) {
     if (parser.token.type == type) {
         advance();
-        return true;
     } else {
-        parser.error = true;
-        strcpy(parser.err_msg, err_msg);
-        return false;
+        report_error(err_msg);
     }
 }
 
 static void report_error(char *err_msg) {
-    strcpy(parser.err_msg, err_msg);
+    // I leave these two properties inside parser for now,
+    // even though I don't know if they may have some utility.
     parser.error = true;
+    strcpy(parser.err_msg, err_msg);
+    
+    printf("Line %d: %s.\n", parser.token.line, parser.err_msg);
+    
+    exit(EXIT_FAILURE);
 }
 
 static bool at_end_symbol(TokType type)
@@ -149,18 +152,11 @@ void parse_tokens(void)
     {
         if (parser.token.type == TOK_EOF) {
             advance();
-            printf("EOF reached. Parsing completed.\n");
+            printf("EOF reached. Parsing completed successfully!\n");
             break;
         }
 
         parse_block();
-
-        if (parser.error) {
-            // Instead of concatenating strings inside parser.err_msg, 
-            // the final string is directly outputted
-            printf("Line %d: %s.\n", parser.token.line, parser.err_msg);
-            break;
-        }
     }
 }
 
@@ -194,28 +190,26 @@ static void parse_if(void)
 
     // Body
     int expr_res = parse_expression();
-    if (parser.error) return;
     (void) expr_res;
-    if (!consume(TOK_OBRACE, "expected '{'")) return;
+    
+    consume(TOK_OBRACE, "expected '{'");
     while (!at_end_symbol(TOK_CBRACE))
     {
         parse_block();
-        if (parser.error) return;
     }
-    if (!consume(TOK_CBRACE, "expected '}'")) return;
+    consume(TOK_CBRACE, "expected '}'");
 
     // Optional else
     // TODO implement match() function?
     if (strncmp("else", parser.token.start, parser.token.len) == 0)
     {
         advance();
-        if (!consume(TOK_OBRACE, "expected '{'")) return;
+        consume(TOK_OBRACE, "expected '{'");
         while (!at_end_symbol(TOK_CBRACE))
         {
             parse_block();
-            if (parser.error) return;
         }
-        if (!consume(TOK_CBRACE, "expected '}'")) return;
+        consume(TOK_CBRACE, "expected '}'");
     }
 
     // Footer
@@ -230,15 +224,14 @@ static void parse_while(void)
 
     // Body
     int expr_res = parse_expression();
-    if (parser.error) return;
     (void) expr_res;
-    if (!consume(TOK_OBRACE, "expected '{'")) return;
+
+    consume(TOK_OBRACE, "expected '{'");
     while (!at_end_symbol(TOK_CBRACE))
     {
         parse_block();
-        if (parser.error) return;
     }
-    if (!consume(TOK_CBRACE, "expected '}'")) return;
+    consume(TOK_CBRACE, "expected '}'");
 
     // Footer
     parser.scope--;
@@ -268,15 +261,12 @@ static void parse_variable(void)
         char err_buffer[ERR_MSG_SIZE];
         snprintf(err_buffer, ERR_MSG_SIZE, "variable '%.*s' declared in local scope", var.name_len, var.name_addr);
         report_error(err_buffer);
-        return;
+        // return;
     }
 
-    if (!consume(TOK_ASSIGN, "expected '=' after variable name")) return;
-    
+    consume(TOK_ASSIGN, "expected '=' after variable name");
     int expr_res = parse_expression();
-    if (parser.error) return;
-    
-    if (!consume(TOK_SEMICOLON, "expected ';' at the end of expression")) return;
+    consume(TOK_SEMICOLON, "expected ';' at the end of expression");
     
     if (is_new) {
         var.value = expr_res;
@@ -293,8 +283,9 @@ static void parse_print(void)
 
     // Body
     int expr_res = parse_expression();
-    if (parser.error) return;
-    if (!consume(TOK_SEMICOLON, "expected ';' at the end of the print expression")) return;
+    consume(TOK_SEMICOLON, "expected ';' at the end of the print expression");
+
+    // Meh
     printf("%d\n", expr_res);
 }
 
@@ -338,7 +329,6 @@ static int parse_expression(void)
             char err_buffer[ERR_MSG_SIZE];
             snprintf(err_buffer, ERR_MSG_SIZE, "expected an operator, but got '%.*s' instead", token.len, token.start);
             report_error(err_buffer);
-            goto error;
         }
 
         // TODO this if check and the next one seem hard coded to me. I'll go ahead in the development
@@ -348,12 +338,10 @@ static int parse_expression(void)
             char err_buffer[ERR_MSG_SIZE];
             snprintf(err_buffer, ERR_MSG_SIZE, "expected a number after unary operator, but got '%s' instead", tok_literal);
             report_error(err_buffer);
-            goto error;
         }
         
         if (new_op.family == UNARY && parser.cursor == parser.token_arr.size-1) {
             report_error("expected a number after unary operator, but reached EOF instead");
-            goto error;
         }
 
         if (new_op.tok_type == TOK_OPAREN) {
@@ -395,8 +383,6 @@ static int parse_expression(void)
                 break;
             }
 
-            if (parser.error) goto error;
-
             ARR_POP(&operators);
             top_op = OpStack_top(operators);
         }
@@ -435,8 +421,6 @@ static int parse_expression(void)
             break;
         }
 
-        if (parser.error) goto error;
-
         ARR_POP(&operators);
     }
 
@@ -447,8 +431,6 @@ static int parse_expression(void)
     assert(operators.size == 0);
     assert(numbers.size == 0);
     
-// Meh
-error:
     ARR_FREE(&operators);
     ARR_FREE(&numbers);
 
@@ -476,7 +458,6 @@ static void perform_unary_op(NumStack *numbers, TokType tok_type)
 {
     if (ARR_IS_EMPTY(numbers)) {
         report_error("while parsing expression: expected number to perform unary operation");
-        return;
     }
 
     int num = ARR_TOP(numbers);
@@ -496,7 +477,6 @@ static void perform_binary_op(NumStack *numbers, TokType tok_type)
 {
     if (ARR_IS_EMPTY(numbers)) {
         report_error("while parsing expression: expected right-hand side number to perform binary operation");
-        return;
     }
 
     int r_num = ARR_TOP(numbers);
@@ -504,7 +484,6 @@ static void perform_binary_op(NumStack *numbers, TokType tok_type)
 
     if (ARR_IS_EMPTY(numbers)) {
         report_error("while parsing expression: expected left-hand side number to perform binary operation");
-        return;
     }
 
     int l_num = ARR_TOP(numbers);
@@ -537,7 +516,6 @@ static void perform_comparison_op(NumStack *numbers, TokType tok_type)
 {
     if (ARR_IS_EMPTY(numbers)) {
         report_error("while parsing expression: expected right-hand side number to perform comparison operation");
-        return;
     }
 
     int r_num = ARR_TOP(numbers);
@@ -545,7 +523,6 @@ static void perform_comparison_op(NumStack *numbers, TokType tok_type)
 
     if (ARR_IS_EMPTY(numbers)) {
         report_error("while parsing expression: expected left-hand side number to perform comparison operation");
-        return;
     }
 
     int l_num = ARR_TOP(numbers);
@@ -584,7 +561,6 @@ static void perform_logical_op(NumStack *numbers, TokType tok_type)
 {
     if (ARR_IS_EMPTY(numbers)) {
         report_error("while parsing expression: expected right-hand side number to perform logical operation");
-        return;
     }
 
     int r_num = ARR_TOP(numbers);
@@ -592,7 +568,6 @@ static void perform_logical_op(NumStack *numbers, TokType tok_type)
 
     if (ARR_IS_EMPTY(numbers)) {
         report_error("while parsing expression: expected left-hand side number to perform logical operation");
-        return;
     }
 
     int l_num = ARR_TOP(numbers);
