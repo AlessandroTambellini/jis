@@ -7,7 +7,7 @@ typedef enum TokType
 {
     // (), {}
     TOK_OPAREN, TOK_CPAREN,
-    TOK_OBRACE, TOK_CBRACE,
+     TOK_CBRACE,
     
     // +, -, *, /
     TOK_PLUS, TOK_MINUS, 
@@ -25,14 +25,19 @@ typedef enum TokType
 
     TOK_NUMBER,
 
-    TOK_SEMICOLON, 
+    // Terminating chars: ';', '{'
+    TOK_SEMICOLON, TOK_OBRACE,
 
     // if, else, while, print
-    TOK_IF, TOK_ELSE, TOK_WHILE, TOK_PRINT, 
+    TOK_IF, TOK_ELSE, TOK_WHILE, TOK_EXEC_PROC, TOK_PRINT, 
     
     // my_var, MyProc
-    TOK_VAR, TOK_PROC,
+    TOK_VAR, TOK_PROC_NAME,
 } TokType;
+
+/* A task is a specific piece of work to be done,
+a procedure is the set of steps to be performed to accomplish the task.
+So, the body of the task is called procedure. */
 
 typedef struct Token {
     TokType type;

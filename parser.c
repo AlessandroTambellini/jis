@@ -29,6 +29,12 @@ typedef struct Variable {
     int value;
 } Variable;
 
+typedef struct Procedure {
+    char *name_addr;
+    int name_len;
+    int proc_start;
+} Procedure;
+
 typedef enum OpFamily {
     GROUPING,
     UNARY,
@@ -69,15 +75,21 @@ Op OpTable[] =
 };
 
 DECLARE_ARR(VarStack, Variable)
+DECLARE_ARR(ProcStack, Procedure)
+
 DECLARE_ARR(OpStack, Op)
 DECLARE_ARR(NumStack, int)
 
-static void parse_block(bool branching);
-static void parse_if(bool branching);
-static void parse_while(void);
-static void parse_variable(bool branching);
-static void parse_print(bool branching);
-static int parse_expression(void);
+static void parse_block(bool branched);
+static void parse_if(bool branched);
+static void parse_while(bool branched);
+static void parse_variable(bool branched);
+static void parse_print(bool branched);
+
+static void parse_procedure(void);
+static void exec_proc(void);
+
+static int parse_expression(bool is_condition);
 
 static void advance(void);
 static void consume(TokType type, char *err_msg);
@@ -90,7 +102,9 @@ static void report_error(char *err_msg);
 
 int lookup_variable(char *name_addr, int name_len);
 
-static bool at_end_symbol(TokType type);
+static bool reached_eoe(bool is_condition);
+static bool reached_eob(void);
+static bool reached_eof(void);
 
 static void get_tok_literal(char *tok_literal, Token token);
 static Op OpTable_get_op(TokType tok_type);
@@ -104,6 +118,7 @@ static Op OpStack_top(OpStack operators);
 Parser parser;
 
 VarStack variables;
+ProcStack procedures;
 
 void init_parser(TokenArr token_arr)
 {
@@ -149,6 +164,9 @@ static void jump_forward(Token last_token, int last_cursor, int last_scope)
 
 static void save_state(Token token, int cursor, int scope)
 {
+    (void) token;
+    (void) cursor;
+    (void) scope;
     // TODO static fields is not a solution
 }
 
@@ -163,11 +181,35 @@ static void report_error(char *err_msg) {
     exit(EXIT_FAILURE);
 }
 
-static bool at_end_symbol(TokType type)
+// eoe: end of expression
+static bool reached_eoe(bool is_condition) 
 {
-    // Not taking TOK_EOF for granted, caused me problems in the past.
-    if (parser.token.type == type || parser.token.type == TOK_EOF) return true;
+    if (is_condition) {
+        if (parser.token.type == TOK_OBRACE || reached_eof()) {
+            consume(TOK_OBRACE, "expected '{'");
+            return true;
+        }
+    } else {
+        if (parser.token.type == TOK_SEMICOLON || reached_eof()) {
+            consume(TOK_SEMICOLON, "expected ';'");
+            return true;
+        }
+    } 
+    return false; 
+}
+
+// eob: end of block
+static bool reached_eob(void)
+{
+    if (parser.token.type == TOK_CBRACE || reached_eof()) {
+        consume(TOK_CBRACE, "expected '}'");
+        return true;
+    }
     return false;
+}
+
+static bool reached_eof(void) {
+    return parser.cursor > parser.token_arr.size - 1;
 }
 
 int lookup_variable(char *name_addr, int name_len)
@@ -191,28 +233,30 @@ void parse_tokens(void)
     ARR_INIT(&variables);
 
     while (parser.cursor < parser.token_arr.size)
-    {
-        if (parser.token.type == TOK_EOF) {
-            advance();
-            printf("EOF reached. Parsing completed successfully!\n");
-            break;
-        }
-
+    {        
         parse_block(true);
     }
+    printf("Parsing completed successfully!\n");
 }
 
 static void parse_block(bool branched)
 {
+    // Token token = parser.token_arr.data[parser.cursor];
     switch (parser.token.type)
     {
+    case TOK_PROC_NAME:
+        parse_procedure();
+        break;
     case TOK_IF:
         parse_if(branched);
         break;
     case TOK_WHILE:
-        parse_while();
+        parse_while(branched);
         break;
-    case TOK_VARIABLE:
+    case TOK_EXEC_PROC:
+        exec_proc();
+        break;
+    case TOK_VAR:
         parse_variable(branched);
         break;
     case TOK_PRINT:
@@ -231,33 +275,30 @@ static void parse_if(bool branched)
     advance();
 
     // Body
-    int expr_res = parse_expression();
+    int expr_res = parse_expression(true);
     bool if_branching = expr_res != 0 ? true : false;
     
-    consume(TOK_OBRACE, "expected '{'");
-    while (!at_end_symbol(TOK_CBRACE))
+    while (!reached_eob())
     {
         parse_block(branched && if_branching);
     }
-    consume(TOK_CBRACE, "expected '}'");
 
     // Optional else
     if (strlen("else") == parser.token.len && strncmp("else", parser.token.start, parser.token.len) == 0)
     {
         advance();
         consume(TOK_OBRACE, "expected '{'");
-        while (!at_end_symbol(TOK_CBRACE))
+        while (!reached_eob())
         {
             parse_block(branched && !if_branching);
         }
-        consume(TOK_CBRACE, "expected '}'");
     }
 
     // Footer
     parser.scope--;
 }
 
-static void parse_while(void)
+static void parse_while(bool branched)
 {
     // Header
     parser.scope++;
@@ -268,34 +309,89 @@ static void parse_while(void)
     int current_cursor = parser.cursor;
     int current_scope = parser.scope; // Do I need it?
 
-    int expr_res = parse_expression();
-    consume(TOK_OBRACE, "expected '{'");
-
+    int expr_res = parse_expression(true);
     bool exec_body = expr_res != 0 ? true : false;
 
     while (exec_body)
     {
-        while (!at_end_symbol(TOK_CBRACE))
+        while (!reached_eob())
         {
-            parse_block(exec_body);
+            parse_block(branched && exec_body);
         }
+
+        if (!branched) break;
+
         Token last_token = parser.token;
         int last_cursor = parser.cursor;
         int last_scope = parser.scope; 
 
         jump_back(current_token, current_cursor, current_scope);
 
-        expr_res = parse_expression();
-        consume(TOK_OBRACE, "expected '{'");
-
+        expr_res = parse_expression(true);
         exec_body = expr_res != 0 ? true : false;
 
         if (!exec_body) jump_forward(last_token, last_cursor, last_scope);
     }
-    consume(TOK_CBRACE, "expected '}'");
 
     // Footer
     parser.scope--;
+}
+
+static void exec_proc(void) {
+    /*
+    for name in proc_arr
+        check if the current name is in it
+            
+    if so, exec it. 
+    */
+
+    advance(); // consume 'exec'
+
+    // Get the procedure name
+    char *proc_name_addr = parser.token.start;
+    int proc_name_len = parser.token.len;
+
+    advance(); // consume proc name
+    consume(TOK_SEMICOLON, "expected ';' after procedure name");
+
+    // Save the current state of execution
+    int current_cursor = parser.cursor;
+    Token current_token = parser.token;
+    // TODO scope isn't managed
+
+    // Once it is verified that the request is semantically correct (or, seen from another perspective,
+    // once it is verified that what the user meant is to execute a task),
+    // search for the requested task.
+    bool proc_exists = false;
+    int proc_idx = -1;
+
+    for (int i = 0; i < procedures.size; i++) {
+        if (proc_name_len == procedures.data[i].name_len 
+            && strncmp(procedures.data[i].name_addr, proc_name_addr, proc_name_len) == 0
+        ) {
+            proc_exists = true;
+            proc_idx = i;
+        }
+    }
+
+    if (!proc_exists) {
+        char err_buffer[ERR_MSG_SIZE];
+        snprintf(err_buffer, ERR_MSG_SIZE, "procedure '%.*s' doesn't exists", proc_name_len, proc_name_addr);
+        report_error(err_buffer);
+    }
+
+    parser.cursor = procedures.data[proc_idx].proc_start;
+    parser.token = parser.token_arr.data[parser.cursor];
+    // TODO scope isn't managed
+
+    while (!reached_eob()) 
+    {
+        parse_block(true);
+    }
+
+    // Once the task procedure is executed, come back to the previous point
+    parser.cursor = current_cursor;
+    parser.token = current_token;
 }
 
 static void parse_variable(bool branched)
@@ -316,7 +412,7 @@ static void parse_variable(bool branched)
         }
     }
 
-    advance(); // consume variable name
+    advance(); // consume the variable name
     
     if (is_new && parser.scope > GLOBAL_SCOPE) {
         char err_buffer[ERR_MSG_SIZE];
@@ -325,12 +421,10 @@ static void parse_variable(bool branched)
     }
 
     consume(TOK_ASSIGN, "expected '=' after variable name");
-    int expr_res = parse_expression();
-    consume(TOK_SEMICOLON, "expected ';' at the end of expression");
+    int expr_res = parse_expression(false);
     
     // If the branch in which this variable is located, is executed, so assign the value to it.
-    if (branched)
-    {
+    if (branched) {
         if (is_new) {
             var.value = expr_res;
             ARR_PUSH(&variables, var, Variable);
@@ -346,11 +440,28 @@ static void parse_print(bool branched)
     advance();
 
     // Body
-    int expr_res = parse_expression();
-    consume(TOK_SEMICOLON, "expected ';' at the end of the print expression");
+    int expr_res = parse_expression(false);
 
     if (branched) {
         printf("%d\n", expr_res);
+    }
+}
+
+static void parse_procedure(void)
+{
+    Procedure proc;
+    proc.name_addr = parser.token.start;
+    proc.name_len = parser.token.len;
+    advance(); // consume the procedure name
+
+    consume(TOK_OBRACE, "expected '{' after procedure name");
+    proc.proc_start = parser.cursor;
+
+    ARR_PUSH(&procedures, proc, Procedure);
+
+    // Parse the body in search of semantic errors.
+    while (!reached_eob()) {
+        parse_block(false); // parsed, but not executed
     }
 }
 
@@ -359,7 +470,7 @@ static void parse_print(bool branched)
  *  Parse expression
  */
 
-static int parse_expression(void)
+static int parse_expression(bool is_condition)
 {
     OpStack operators;
     ARR_INIT(&operators);
@@ -369,7 +480,7 @@ static int parse_expression(void)
     int expr_res = 0;
     int prec_lvl = 0;
 
-    while (parser.token.type != TOK_SEMICOLON && parser.token.type != TOK_OBRACE && parser.token.type != TOK_EOF)
+    while (!reached_eoe(is_condition))
     {        
         // Current token, syntactic sugar
         Token token = parser.token;
@@ -383,7 +494,7 @@ static int parse_expression(void)
             continue;
         }
 
-        if (token.type == TOK_VARIABLE) {
+        if (token.type == TOK_VAR) {
             int var_value = lookup_variable(token.start, token.len);
             ARR_PUSH(&numbers, var_value, int);
             advance(); // TODO find solution to remove advance() from here
@@ -457,8 +568,6 @@ static int parse_expression(void)
 
         advance();
     } // while()
-
-    // advance(); // Consume ';' or EOF
 
     /* if prec_lvl != 0, therefore some open paren doesn't have the corresponding closing paren
     [e.g. 3 * (4 + 5) + (6 + 7], no error is reported, because for how the expression parsing works,

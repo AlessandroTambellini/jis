@@ -73,13 +73,16 @@ void interpret(char *source_code)
     }
 #endif // DEBUG
 
-	// 2 - Parsing Phase
 	if (tokenization_err) {
 		printf("Parsing aborted.\n");
-	} else {
-		parse_tokens(ta);
+		goto error;
 	}
 
+	// 2 - Parsing Phase
+	init_parser(ta);
+	parse_tokens();
+
+error:
 	ARR_FREE(&ta);
 }
 

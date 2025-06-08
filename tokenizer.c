@@ -146,7 +146,8 @@ void collect_tokens(TokenArr *ta, bool *error)
                 else if (strncmp("else", start, len) == 0) type = TOK_ELSE;
                 else if (strncmp("while", start, len) == 0) type = TOK_WHILE;
                 else if (strncmp("print", start, len) == 0) type = TOK_PRINT;
-                else if (is_upp(start[0])) type = TOK_PROC;
+                else if (strncmp("exec", start, len) == 0) type = TOK_EXEC_PROC;
+                else if (is_upp(start[0])) type = TOK_PROC_NAME;
 
                 create_token(&token, type, len);
 
@@ -284,7 +285,8 @@ static char *tok_type_to_string(TokType tt)
     case      TOK_ELSE: return "ELSE";
     case      TOK_WHILE: return "WHILE";
     case      TOK_PRINT: return "PRINT";
-    case TOK_PROC: return "PROC";
+    case TOK_PROC_NAME: return "PROC_NAME";
+    case TOK_EXEC_PROC: return "EXEC_PROC";
     
     case      TOK_SEMICOLON: return "SEMICOLON";
         
