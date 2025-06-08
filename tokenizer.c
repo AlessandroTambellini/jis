@@ -255,8 +255,6 @@ static char *tok_type_to_string(TokType tt)
 {
     switch (tt)
     {
-    case        TOK_ERROR: return "ERROR";
-
     case   TOK_OPAREN: return "OPEN_PAREN";
     case  TOK_CPAREN: return "CLOSE_PAREN";
     case   TOK_OBRACE: return "OPEN_BRACE";

@@ -5,8 +5,6 @@
 
 typedef enum TokType 
 {
-    TOK_ERROR,
-
     // (), {}
     TOK_OPAREN, TOK_CPAREN,
     TOK_OBRACE, TOK_CBRACE,
