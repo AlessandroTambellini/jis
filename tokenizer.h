@@ -7,9 +7,8 @@ typedef enum TokType
 {
     TOK_ERROR,
 
-    // (), [], {}
+    // (), {}
     TOK_OPAREN, TOK_CPAREN,
-    TOK_OSQUARE, TOK_CSQUARE,
     TOK_OBRACE, TOK_CBRACE,
     
     // +, -, *, /
@@ -26,9 +25,15 @@ typedef enum TokType
 
     TOK_NOT, TOK_AND, TOK_OR,
 
-    TOK_NUMBER, TOK_ALPHA,
+    TOK_NUMBER,
 
-    TOK_EOF
+    TOK_SEMICOLON, 
+
+    // if, else, while, print
+    TOK_IF, TOK_ELSE, TOK_WHILE, TOK_PRINT, 
+    
+    // my_var, MyProc
+    TOK_VAR, TOK_PROC,
 } TokType;
 
 typedef struct Token {

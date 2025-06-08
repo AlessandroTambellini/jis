@@ -12,6 +12,8 @@ static char look_ahead(void);
 
 static bool is_digit(char c);
 static bool is_alpha(char c);
+static bool is_upp(char c);
+
 static int get_number_len(bool *error);
 static int get_identifier_len(void);
 
@@ -32,10 +34,9 @@ void init_tokenizer(char *source_code)
 
 void collect_tokens(TokenArr *ta, bool *error)
 {
-    for (;;)
+    while (tokenizer.ch != '\0') // eof
     {
         Token token = {0};
-        bool eof = false;
 
         switch (tokenizer.ch)
         {
@@ -119,18 +120,14 @@ void collect_tokens(TokenArr *ta, bool *error)
             create_token(&token, TOK_CBRACE, 1);
             break;
 
-        case ' ':
-        case '\t':
-        case '\r':
-            break;
-            
-        case '\n':
+       case '\n':
             tokenizer.line++;
             break;
 
+        case ' ':
+        case '\t':
+        case '\r':
         case '\0':
-            create_token(&token, TOK_EOF, 1);
-            eof = true; // Do I need this variable? Probably not.
             break;
         
         default: {
@@ -143,11 +140,13 @@ void collect_tokens(TokenArr *ta, bool *error)
                 char *start = &tokenizer.source_code[tokenizer.cursor];
                 int len = get_identifier_len();
 
-                TokType type = TOK_VARIABLE;
-                // Keywords
+                TokType type = TOK_VAR;
+
                 if (strncmp("if", start, len) == 0) type = TOK_IF;
                 else if (strncmp("else", start, len) == 0) type = TOK_ELSE;
                 else if (strncmp("while", start, len) == 0) type = TOK_WHILE;
+                else if (strncmp("print", start, len) == 0) type = TOK_PRINT;
+                else if (is_upp(start[0])) type = TOK_PROC;
 
                 create_token(&token, type, len);
 
@@ -160,8 +159,10 @@ void collect_tokens(TokenArr *ta, bool *error)
 
         advance();
         
-        if (token.start != NULL) ARR_PUSH(ta, token, Token);
-        if (eof) break;
+        // Skip ' ', '\t', '\n', '\0'
+        if (token.start != NULL) {
+            ARR_PUSH(ta, token, Token);
+        }
     }
 }
 
@@ -201,6 +202,8 @@ static bool is_digit(char c) {
 static bool is_alpha(char c) {
     return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
 }
+
+static bool is_upp(char c) { return 'A' <= c && c <= 'Z'; }
 
 static int get_number_len(bool *error) 
 {
@@ -243,11 +246,7 @@ static int get_identifier_len(void)
 void print_token(Token token)
 {
     for (int i = 0; i < token.len; i++) {
-        if (token.type == TOK_EOF) {
-            printf("EOF");
-        } else {
-            printf("%c", token.start[i]);
-        }
+        printf("%c", token.start[i]);
     }
     printf(": %s", tok_type_to_string(token.type));
 }
@@ -260,8 +259,6 @@ static char *tok_type_to_string(TokType tt)
 
     case   TOK_OPAREN: return "OPEN_PAREN";
     case  TOK_CPAREN: return "CLOSE_PAREN";
-    case  TOK_OSQUARE: return "OPEN_SQUARE";
-    case TOK_CSQUARE: return "CLOSE_SQUARE";
     case   TOK_OBRACE: return "OPEN_BRACE";
     case  TOK_CBRACE: return "CLOSE_BRACE";
 
@@ -284,15 +281,15 @@ static char *tok_type_to_string(TokType tt)
     case           TOK_OR: return "OR";
     
     case       TOK_NUMBER: return "NUMBER";
-    case     TOK_VARIABLE: return "VARIABLE";
+    case     TOK_VAR: return "VARIABLE";
     case      TOK_IF: return "IF";
     case      TOK_ELSE: return "ELSE";
     case      TOK_WHILE: return "WHILE";
+    case      TOK_PRINT: return "PRINT";
+    case TOK_PROC: return "PROC";
     
     case      TOK_SEMICOLON: return "SEMICOLON";
-    
-    case          TOK_EOF: return "EOF";
-    
+        
     default:
         assert("Unreachable" && false);
         break;
