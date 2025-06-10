@@ -1,0 +1,28 @@
+//
+// 1) In Jis there is neither the not operator nor negative numbers
+
+// How to represent not: 
+my_var = 1;
+if my_var != 0 {
+    print my_var;   
+}
+
+// How to represent negative numbers:
+if (0 - my_var) == (0 - 1) {
+    print (0 - 1);
+}
+
+//
+// 2) The closing parenthesis is not strictly required. It is required only if you want to "lower" the precedence.
+
+if 27 == 3 * (4 + 5 {
+    print 27;
+}
+
+if 27 == 3 * (4 + 5) {
+    print 27;
+}
+
+if 27 != 3 * (4 + 5) + 1 {
+    print 27;
+}

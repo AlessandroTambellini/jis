@@ -1,0 +1,13 @@
+index = 0;
+
+Cycle {
+    while index < 5 {
+        print index;
+        index = index + 1;
+    }
+
+    index = 0;
+} 
+
+exec Cycle;
+exec Cycle;

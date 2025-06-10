@@ -1,11 +1,5 @@
-#include <string.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <assert.h>
-
 #include "tokenizer.h"
-#include "array.h"
+#include "utils.h"
 
 static void advance(void);
 static char look_ahead(void);
@@ -56,16 +50,21 @@ void collect_tokens(TokenArr *ta, bool *error)
         case '*':
             create_token(&token, TOK_STAR, 1);
             break;
-        case '/':
-            create_token(&token, TOK_SLASH, 1);
-            break;
+        case '/': {
+            if (look_ahead() == '/') {
+                while (look_ahead() != '\n') advance();
+            } else {
+                create_token(&token, TOK_SLASH, 1);
+            }
+        } break;
 
         case '!': {
             if (look_ahead() == '=') {
                 advance();
                 create_token(&token, TOK_NE, 2);
             } else {
-                create_token(&token, TOK_NOT, 1);
+                printf("Line %d: error: unknown token '%c'.\n", tokenizer.line, tokenizer.ch);
+                *error = true;
             }
         } break;
         
@@ -142,12 +141,12 @@ void collect_tokens(TokenArr *ta, bool *error)
 
                 TokType type = TOK_VAR;
 
-                if (strncmp("if", start, len) == 0) type = TOK_IF;
-                else if (strncmp("else", start, len) == 0) type = TOK_ELSE;
-                else if (strncmp("while", start, len) == 0) type = TOK_WHILE;
-                else if (strncmp("print", start, len) == 0) type = TOK_PRINT;
-                else if (strncmp("exec", start, len) == 0) type = TOK_EXEC_PROC;
-                else if (is_upp(start[0])) type = TOK_PROC_NAME;
+                if (match("if", start, len)) type = TOK_IF;
+                else if (match("else", start, len)) type = TOK_ELSE;
+                else if (match("while", start, len)) type = TOK_WHILE;
+                else if (match("print", start, len)) type = TOK_PRINT;
+                else if (match("exec", start, len)) type = TOK_EXEC_TASK;
+                else if (is_upp(start[0])) type = TOK_TASK;
 
                 create_token(&token, type, len);
 
@@ -275,7 +274,6 @@ static char *tok_type_to_string(TokType tt)
     case           TOK_EQ: return "EQ";
     case           TOK_NE: return "NE";
 
-    case          TOK_NOT: return "NOT";
     case          TOK_AND: return "AND";
     case           TOK_OR: return "OR";
     
@@ -285,8 +283,8 @@ static char *tok_type_to_string(TokType tt)
     case      TOK_ELSE: return "ELSE";
     case      TOK_WHILE: return "WHILE";
     case      TOK_PRINT: return "PRINT";
-    case TOK_PROC_NAME: return "PROC_NAME";
-    case TOK_EXEC_PROC: return "EXEC_PROC";
+    case TOK_TASK: return "PROC_NAME";
+    case TOK_EXEC_TASK: return "EXEC_PROC";
     
     case      TOK_SEMICOLON: return "SEMICOLON";
         

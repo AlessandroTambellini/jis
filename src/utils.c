@@ -1,6 +1,4 @@
-#include <stdlib.h>
-
-#include "array.h"
+#include "utils.h"
 
 void *reallocate(void *pointer, size_t new_size) 
 {
@@ -16,3 +14,7 @@ void *reallocate(void *pointer, size_t new_size)
     return res;
 }
 
+bool match(const char *str_lit, char *str_addr, size_t str_len)
+{
+    return strlen(str_lit) == str_len && strncmp(str_lit, str_addr, str_len) == 0;
+}

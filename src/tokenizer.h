@@ -1,13 +1,13 @@
 #ifndef TOKENIZER_H
 #define TOKENIZER_H
 
-#include "array.h"
+#include "utils.h"
 
 typedef enum TokType 
 {
     // (), {}
     TOK_OPAREN, TOK_CPAREN,
-     TOK_CBRACE,
+    TOK_CBRACE,
     
     // +, -, *, /
     TOK_PLUS, TOK_MINUS, 
@@ -21,7 +21,8 @@ typedef enum TokType
     TOK_ASSIGN,
     TOK_EQ, TOK_NE,
 
-    TOK_NOT, TOK_AND, TOK_OR,
+    // &&, ||
+    TOK_AND, TOK_OR,
 
     TOK_NUMBER,
 
@@ -29,10 +30,10 @@ typedef enum TokType
     TOK_SEMICOLON, TOK_OBRACE,
 
     // if, else, while, print
-    TOK_IF, TOK_ELSE, TOK_WHILE, TOK_EXEC_PROC, TOK_PRINT, 
+    TOK_IF, TOK_ELSE, TOK_WHILE, TOK_EXEC_TASK, TOK_PRINT, 
     
     // my_var, MyProc
-    TOK_VAR, TOK_PROC_NAME,
+    TOK_VAR, TOK_TASK,
 } TokType;
 
 /* A task is a specific piece of work to be done,

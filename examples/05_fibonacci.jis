@@ -1,0 +1,27 @@
+prev = 0;
+curr = 0;
+next = 0;
+i = 2;
+
+Fib {
+    prev = 0;
+    curr = 1;
+
+    while i <= numbers {
+        next = prev + curr;
+        prev = curr;
+        curr = next;
+        i = i + 1;
+    }
+    
+    i = 2;
+    next = 0;
+}
+
+numbers = 5;
+exec Fib;
+print curr;
+
+numbers = 10;
+exec Fib;
+print curr;

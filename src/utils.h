@@ -1,5 +1,11 @@
-#ifndef ARRAY_H
-#define ARRAY_H
+#ifndef UTILS_H
+#define UTILS_H
+
+#include <assert.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
 
 #define GROW_CAPACITY(capacity) \
     ((capacity) < 8 ? 8 : (capacity) * 2)
@@ -55,4 +61,6 @@
 
 void *reallocate(void *pointer, size_t new_size);
 
-#endif // ARRAY_H
+bool match(const char *str_lit, char *str_addr, size_t str_len);
+
+#endif // UTILS_H
